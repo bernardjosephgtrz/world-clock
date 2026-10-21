@@ -1,0 +1,15 @@
+# Build intermediates (icon generator, test runner)
+obj/
+
+# dist/ is committed on purpose: dist/WorldClock.exe runs straight after cloning.
+# Anything else that lands there is ignored.
+dist/*
+!dist/WorldClock.exe
+
+# Editor / OS noise
+.vs/
+.vscode/
+*.user
+*.suo
+Thumbs.db
+desktop.ini
