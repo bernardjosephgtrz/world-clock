@@ -11,7 +11,7 @@ draggable line when you just want the times.
 ## Run it
 
 ```powershell
-git clone https://github.com/<your-account>/world-clock.git
+git clone https://github.com/bernardjosephgtrz/world-clock.git
 .\world-clock\dist\WorldClock.exe
 ```
 
