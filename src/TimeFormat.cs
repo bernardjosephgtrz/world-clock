@@ -110,16 +110,6 @@ namespace WorldClock
             return TimeZoneInfo.ConvertTimeToUtc(wall, zone);
         }
 
-        /// <summary>Moves to the next/previous multiple of <paramref name="minutes"/> on the zone's wall clock:
-        /// 10:07 +15 gives 10:15, 10:07 -15 gives 10:00, 10:15 +15 gives 10:30.</summary>
-        public static DateTime Step(DateTime utc, TimeZoneInfo zone, int minutes, int dir)
-        {
-            long t = TimeZoneInfo.ConvertTimeFromUtc(utc, zone).TimeOfDay.Ticks;
-            long s = minutes * TimeSpan.TicksPerMinute;
-            long target = dir > 0 ? (t / s + 1) * s : ((t + s - 1) / s - 1) * s;
-            return utc.AddTicks(target - t);
-        }
-
         /// <summary>Same wall-clock minute in the zone, one day later/earlier (stays correct across DST).</summary>
         public static DateTime StepDay(DateTime utc, TimeZoneInfo zone, int dir)
         {

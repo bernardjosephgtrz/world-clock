@@ -106,6 +106,7 @@ namespace WorldClock
         public void HideToTray()
         {
             picker.IsOpen = false;
+            timePicker.IsOpen = false;
             Hide();
             Program.NotifyHiddenOnce();
         }

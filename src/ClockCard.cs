@@ -12,6 +12,7 @@ namespace WorldClock
     {
         public event Action<ClockCard> PickRequested;
         public event Action<ClockCard> RemoveRequested;
+        public event Action<ClockCard> TimeClicked;                // open the time picker for this clock
         public event Action<ClockCard, DateTime> PlanRequested;   // user set a time on this clock (UTC instant)
 
         public readonly bool IsHome;
@@ -27,10 +28,9 @@ namespace WorldClock
         readonly AnalogClock analog;
         readonly FrameworkElement anchor;
         readonly TextBlock time;
-        readonly TextBox editor;
+        readonly Button prevDay, nextDay;
 
         DateTime shownUtc;   // instant currently displayed (live or planned)
-        int wheelAcc;        // touchpads send small deltas; step once per full notch
 
         public ClockCard(ZoneEntry zone, bool isHome)
         {
@@ -121,14 +121,15 @@ namespace WorldClock
             };
             stack.Children.Add(subText);
 
-            // Digital time: click to type a time, scroll to step it. Transparent background so the whole row reacts.
+            // Digital time: click to plan a time. Transparent background so the whole row reacts.
             time = new TextBlock
             {
                 TextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 12, 0, 0),
                 Foreground = Theme.TextBrush,
                 Background = Brushes.Transparent,
                 Cursor = Cursors.Hand,
-                ToolTip = "Plan a time: click to type it (3pm, 15:00),\nor scroll ±15 min (Shift + scroll ±1 hour)"
+                ToolTip = "Click to plan a time on this clock (e.g. a meeting at 3 PM here)"
             };
             Typography.SetNumeralAlignment(time, FontNumeralAlignment.Tabular);
             timeRun = new Run { FontSize = 34, FontWeight = FontWeights.Light };
@@ -136,40 +137,28 @@ namespace WorldClock
             time.Inlines.Add(timeRun);
             time.Inlines.Add(new Run(" ") { FontSize = 13 });
             time.Inlines.Add(ampmRun);
-            time.MouseLeftButtonDown += (s, e) => { BeginEdit(); e.Handled = true; };
-            time.MouseWheel += (s, e) => { OnWheel(e.Delta, false); e.Handled = true; };
+            time.MouseLeftButtonDown += (s, e) => { if (TimeClicked != null) TimeClicked(this); e.Handled = true; };
+            stack.Children.Add(time);
 
-            editor = new TextBox
-            {
-                Style = (Style)Application.Current.FindResource("SearchBox"),
-                Padding = new Thickness(8, 4, 8, 4),
-                FontSize = 20,
-                Width = 150,
-                TextAlignment = TextAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Visibility = Visibility.Collapsed,
-                ToolTip = "Type a time here: 3pm, 3:30 pm, 15:00\nEnter = plan it · Esc = cancel"
-            };
-            editor.KeyDown += OnEditorKey;
-            editor.LostKeyboardFocus += delegate { EndEdit(); };
-
-            var timeRow = new Grid { Margin = new Thickness(0, 12, 0, 0) };
-            timeRow.Children.Add(time);
-            timeRow.Children.Add(editor);
-            stack.Children.Add(timeRow);
-
+            // Date, with previous/next-day arrows while a time is planned.
             dateText = new TextBlock
             {
                 FontSize = 12,
                 Foreground = Theme.TextDimBrush,
-                TextAlignment = TextAlignment.Center,
-                Background = Brushes.Transparent,
-                Margin = new Thickness(0, 1, 0, 0),
-                ToolTip = "Scroll to move the planned time a day"
+                VerticalAlignment = VerticalAlignment.Center
             };
-            dateText.MouseWheel += (s, e) => { OnWheel(e.Delta, true); e.Handled = true; };
-            stack.Children.Add(dateText);
+            prevDay = DayButton("", "Previous day", -1);
+            nextDay = DayButton("", "Next day", 1);
+            var dateRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 1, 0, 0)
+            };
+            dateRow.Children.Add(prevDay);
+            dateRow.Children.Add(dateText);
+            dateRow.Children.Add(nextDay);
+            stack.Children.Add(dateRow);
 
             offsetText = new TextBlock { FontSize = 11, Foreground = isHome ? Theme.TextBrush : Theme.AccentSoftBrush };
             stack.Children.Add(new Border
@@ -204,52 +193,40 @@ namespace WorldClock
 
         // ---- planning a time -----------------------------------------------------
 
-        void BeginEdit()
+        /// <summary>Element the time picker drops down from.</summary>
+        public FrameworkElement TimeAnchor
         {
-            var local = TimeZoneInfo.ConvertTimeFromUtc(shownUtc, Zone.Tz);
-            editor.Text = local.ToString("h:mm tt", TimeFormat.En);
-            editor.Foreground = Theme.TextBrush;
-            editor.Visibility = Visibility.Visible;
-            time.Visibility = Visibility.Hidden;
-            Dispatcher.BeginInvoke(new Action(delegate { editor.Focus(); editor.SelectAll(); }),
-                System.Windows.Threading.DispatcherPriority.Input);
+            get { return time; }
         }
 
-        void EndEdit()
+        /// <summary>Instant currently displayed (live or planned).</summary>
+        public DateTime ShownUtc
         {
-            editor.Visibility = Visibility.Collapsed;
-            time.Visibility = Visibility.Visible;
+            get { return shownUtc; }
         }
 
-        void OnEditorKey(object sender, KeyEventArgs e)
+        /// <summary>Plan a wall-clock time in this clock's zone, on the day it is showing.</summary>
+        public void PlanWallTime(int hour, int minute)
         {
-            if (e.Key == Key.Escape) { EndEdit(); e.Handled = true; return; }
-            if (e.Key != Key.Enter) return;
-            e.Handled = true;
-            int h, m;
-            if (!TimeFormat.TryParseClock(editor.Text, out h, out m))
-            {
-                editor.Foreground = Theme.ErrorBrush;   // stay open so it can be fixed
-                editor.SelectAll();
-                return;
-            }
             var day = TimeZoneInfo.ConvertTimeFromUtc(shownUtc, Zone.Tz).Date;
-            EndEdit();
-            Plan(TimeFormat.ZoneToUtc(day.AddHours(h).AddMinutes(m), Zone.Tz));
+            Plan(TimeFormat.ZoneToUtc(day.AddHours(hour).AddMinutes(minute), Zone.Tz));
         }
 
-        void OnWheel(int delta, bool wholeDay)
+        Button DayButton(string glyph, string tip, int dir)
         {
-            wheelAcc += delta;
-            int steps = wheelAcc / 120;
-            wheelAcc %= 120;
-            if (steps == 0) return;
-            int dir = Math.Sign(steps);
-            int minutes = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 60 : 15;
-            var utc = shownUtc;
-            for (int i = 0; i < Math.Abs(steps); i++)
-                utc = wholeDay ? TimeFormat.StepDay(utc, Zone.Tz, dir) : TimeFormat.Step(utc, Zone.Tz, minutes, dir);
-            Plan(utc);
+            var b = new Button
+            {
+                Content = glyph,
+                ToolTip = tip,
+                Width = 20,
+                Height = 18,
+                FontSize = 9,
+                Margin = new Thickness(4, 0, 4, 0),
+                Visibility = Visibility.Collapsed,
+                Style = (Style)Application.Current.FindResource("IconButton")
+            };
+            b.Click += delegate { Plan(TimeFormat.StepDay(shownUtc, Zone.Tz, dir)); };
+            return b;
         }
 
         void Plan(DateTime utc)
@@ -267,6 +244,7 @@ namespace WorldClock
             var local = TimeZoneInfo.ConvertTimeFromUtc(utcNow, tz);
 
             timeRun.Text = local.ToString(planned ? "h:mm" : "h:mm:ss", TimeFormat.En);
+            prevDay.Visibility = nextDay.Visibility = planned ? Visibility.Visible : Visibility.Collapsed;
             ampmRun.Text = local.ToString("tt", TimeFormat.En);
             dateText.Text = local.ToString("ddd, MMM d, yyyy", TimeFormat.En);
 

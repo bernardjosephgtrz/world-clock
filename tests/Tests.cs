@@ -88,16 +88,12 @@ namespace WorldClock.Tests
             // 02:30 does not exist in Hamburg on 29 Mar 2026 (02:00 -> 03:00): becomes 03:30 CEST = 01:30 UTC.
             Eq(new DateTime(2026, 3, 29, 1, 30, 0), TimeFormat.ZoneToUtc(new DateTime(2026, 3, 29, 2, 30, 0), hamburg.Tz), "dst gap");
 
-            // Scroll steps snap to the zone's wall clock.
+            // Day arrows keep the wall-clock minute (seconds dropped).
             var at1007 = new DateTime(2026, 10, 29, 2, 7, 23, DateTimeKind.Utc);   // 10:07:23 in Cebu
             Func<DateTime, string> cebu = u => TimeZoneInfo.ConvertTimeFromUtc(u, home).ToString("MM-dd HH:mm:ss");
-            Eq("10-29 10:15:00", cebu(TimeFormat.Step(at1007, home, 15, 1)), "step +15 snaps up");
-            Eq("10-29 10:00:00", cebu(TimeFormat.Step(at1007, home, 15, -1)), "step -15 snaps down");
-            Eq("10-29 10:30:00", cebu(TimeFormat.Step(TimeFormat.Step(at1007, home, 15, 1), home, 15, 1)), "step +15 twice");
-            Eq("10-29 11:00:00", cebu(TimeFormat.Step(at1007, home, 60, 1)), "step +1h");
-            Eq("10-28 23:45:00", cebu(TimeFormat.Step(new DateTime(2026, 10, 28, 16, 0, 0, DateTimeKind.Utc), home, 15, -1)), "step back over midnight");
             Eq("10-30 10:07:00", cebu(TimeFormat.StepDay(at1007, home, 1)), "next day");
-            // Day step keeps the wall-clock time across Hamburg's DST switch (Sat 24 -> Sun 25 Oct).
+            Eq("10-28 10:07:00", cebu(TimeFormat.StepDay(at1007, home, -1)), "previous day");
+            // Day arrows keep the wall-clock time across Hamburg's DST switch (Sat 24 -> Sun 25 Oct).
             var sat3pm = TimeFormat.ZoneToUtc(new DateTime(2026, 10, 24, 15, 0, 0), hamburg.Tz);
             Eq(new DateTime(2026, 10, 25, 15, 0, 0), TimeZoneInfo.ConvertTimeFromUtc(TimeFormat.StepDay(sat3pm, hamburg.Tz, 1), hamburg.Tz), "day step over dst");
 

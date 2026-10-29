@@ -20,6 +20,7 @@ namespace WorldClock
         readonly List<ClockCard> cards = new List<ClockCard>();
         readonly StackPanel cardPanel;
         readonly ZonePicker picker = new ZonePicker();
+        readonly TimePicker timePicker = new TimePicker();
         readonly DispatcherTimer timer = new DispatcherTimer(DispatcherPriority.Render);
         readonly Button addButton;
         readonly Button pinButton;
@@ -34,6 +35,7 @@ namespace WorldClock
         readonly Run planWhen;
 
         ClockCard pickingFor;   // null = adding a new clock
+        ClockCard timeFor;      // clock the time picker is open for
         DateTime? plannedUtc;   // null = live; otherwise every clock shows this instant
         ZoneEntry plannedZone;  // clock the time was set on (named in the banner)
 
@@ -197,6 +199,7 @@ namespace WorldClock
 
             root.MouseLeftButtonDown += OnDragArea;
             picker.Picked += OnZonePicked;
+            timePicker.Picked += (h, m) => { if (timeFor != null) timeFor.PlanWallTime(h, m); };
             KeyDown += (s, e) => { if (e.Key == Key.Escape && plannedUtc.HasValue) { BackToNow(); e.Handled = true; } };
 
             // ---- initial clocks -------------------------------------------------
@@ -248,6 +251,7 @@ namespace WorldClock
             if (cards.Count > 0) card.Margin = new Thickness(10, 0, 0, 0);
             card.PickRequested += c => { pickingFor = c; picker.Show(c.PickAnchor); };
             card.RemoveRequested += RemoveCard;
+            card.TimeClicked += c => { timeFor = c; timePicker.Show(c.TimeAnchor, c.ShownUtc, c.Zone.Tz, c.IsHome ? null : home); };
             card.PlanRequested += (c, utc) => PlanAt(c.Zone, utc);
             cards.Add(card);
             cardPanel.Children.Add(card);

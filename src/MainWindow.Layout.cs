@@ -126,6 +126,7 @@ namespace WorldClock
         {
             if (on == settings.Compact) return;
             picker.IsOpen = false;
+            timePicker.IsOpen = false;
             if (on) BackToNow();   // the one-line strip always shows the live time
             SavePosition();              // remember where the current view was
             settings.Compact = on;
