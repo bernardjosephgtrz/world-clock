@@ -2,6 +2,8 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
 
 namespace WorldClock
 {
@@ -10,6 +12,7 @@ namespace WorldClock
     {
         public event Action<ClockCard> PickRequested;
         public event Action<ClockCard> RemoveRequested;
+        public event Action<ClockCard, DateTime> PlanRequested;   // user set a time on this clock (UTC instant)
 
         public readonly bool IsHome;
         public ZoneEntry Zone { get; private set; }
@@ -23,6 +26,11 @@ namespace WorldClock
         readonly Run ampmRun;
         readonly AnalogClock analog;
         readonly FrameworkElement anchor;
+        readonly TextBlock time;
+        readonly TextBox editor;
+
+        DateTime shownUtc;   // instant currently displayed (live or planned)
+        int wheelAcc;        // touchpads send small deltas; step once per full notch
 
         public ClockCard(ZoneEntry zone, bool isHome)
         {
@@ -113,11 +121,14 @@ namespace WorldClock
             };
             stack.Children.Add(subText);
 
-            var time = new TextBlock
+            // Digital time: click to type a time, scroll to step it. Transparent background so the whole row reacts.
+            time = new TextBlock
             {
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 12, 0, 0),
-                Foreground = Theme.TextBrush
+                TextAlignment = TextAlignment.Center,
+                Foreground = Theme.TextBrush,
+                Background = Brushes.Transparent,
+                Cursor = Cursors.Hand,
+                ToolTip = "Plan a time: click to type it (3pm, 15:00),\nor scroll ±15 min (Shift + scroll ±1 hour)"
             };
             Typography.SetNumeralAlignment(time, FontNumeralAlignment.Tabular);
             timeRun = new Run { FontSize = 34, FontWeight = FontWeights.Light };
@@ -125,15 +136,39 @@ namespace WorldClock
             time.Inlines.Add(timeRun);
             time.Inlines.Add(new Run(" ") { FontSize = 13 });
             time.Inlines.Add(ampmRun);
-            stack.Children.Add(time);
+            time.MouseLeftButtonDown += (s, e) => { BeginEdit(); e.Handled = true; };
+            time.MouseWheel += (s, e) => { OnWheel(e.Delta, false); e.Handled = true; };
+
+            editor = new TextBox
+            {
+                Style = (Style)Application.Current.FindResource("SearchBox"),
+                Padding = new Thickness(8, 4, 8, 4),
+                FontSize = 20,
+                Width = 150,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Visibility = Visibility.Collapsed,
+                ToolTip = "Type a time here: 3pm, 3:30 pm, 15:00\nEnter = plan it · Esc = cancel"
+            };
+            editor.KeyDown += OnEditorKey;
+            editor.LostKeyboardFocus += delegate { EndEdit(); };
+
+            var timeRow = new Grid { Margin = new Thickness(0, 12, 0, 0) };
+            timeRow.Children.Add(time);
+            timeRow.Children.Add(editor);
+            stack.Children.Add(timeRow);
 
             dateText = new TextBlock
             {
                 FontSize = 12,
                 Foreground = Theme.TextDimBrush,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 1, 0, 0)
+                TextAlignment = TextAlignment.Center,
+                Background = Brushes.Transparent,
+                Margin = new Thickness(0, 1, 0, 0),
+                ToolTip = "Scroll to move the planned time a day"
             };
+            dateText.MouseWheel += (s, e) => { OnWheel(e.Delta, true); e.Handled = true; };
             stack.Children.Add(dateText);
 
             offsetText = new TextBlock { FontSize = 11, Foreground = isHome ? Theme.TextBrush : Theme.AccentSoftBrush };
@@ -167,12 +202,71 @@ namespace WorldClock
             cityText.ToolTip = zone.Label + "\n" + zone.Tz.DisplayName;
         }
 
-        public void UpdateTime(DateTime utcNow, TimeZoneInfo home)
+        // ---- planning a time -----------------------------------------------------
+
+        void BeginEdit()
         {
+            var local = TimeZoneInfo.ConvertTimeFromUtc(shownUtc, Zone.Tz);
+            editor.Text = local.ToString("h:mm tt", TimeFormat.En);
+            editor.Foreground = Theme.TextBrush;
+            editor.Visibility = Visibility.Visible;
+            time.Visibility = Visibility.Hidden;
+            Dispatcher.BeginInvoke(new Action(delegate { editor.Focus(); editor.SelectAll(); }),
+                System.Windows.Threading.DispatcherPriority.Input);
+        }
+
+        void EndEdit()
+        {
+            editor.Visibility = Visibility.Collapsed;
+            time.Visibility = Visibility.Visible;
+        }
+
+        void OnEditorKey(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape) { EndEdit(); e.Handled = true; return; }
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            int h, m;
+            if (!TimeFormat.TryParseClock(editor.Text, out h, out m))
+            {
+                editor.Foreground = Theme.ErrorBrush;   // stay open so it can be fixed
+                editor.SelectAll();
+                return;
+            }
+            var day = TimeZoneInfo.ConvertTimeFromUtc(shownUtc, Zone.Tz).Date;
+            EndEdit();
+            Plan(TimeFormat.ZoneToUtc(day.AddHours(h).AddMinutes(m), Zone.Tz));
+        }
+
+        void OnWheel(int delta, bool wholeDay)
+        {
+            wheelAcc += delta;
+            int steps = wheelAcc / 120;
+            wheelAcc %= 120;
+            if (steps == 0) return;
+            int dir = Math.Sign(steps);
+            int minutes = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 60 : 15;
+            var utc = shownUtc;
+            for (int i = 0; i < Math.Abs(steps); i++)
+                utc = wholeDay ? TimeFormat.StepDay(utc, Zone.Tz, dir) : TimeFormat.Step(utc, Zone.Tz, minutes, dir);
+            Plan(utc);
+        }
+
+        void Plan(DateTime utc)
+        {
+            if (PlanRequested != null) PlanRequested(this, utc);
+        }
+
+        // ---- display ------------------------------------------------------------
+
+        /// <summary>Shows the given instant. <paramref name="planned"/> = a chosen time, not now: no seconds.</summary>
+        public void UpdateTime(DateTime utcNow, TimeZoneInfo home, bool planned)
+        {
+            shownUtc = utcNow;
             var tz = Zone.Tz;
             var local = TimeZoneInfo.ConvertTimeFromUtc(utcNow, tz);
 
-            timeRun.Text = local.ToString("h:mm:ss", TimeFormat.En);
+            timeRun.Text = local.ToString(planned ? "h:mm" : "h:mm:ss", TimeFormat.En);
             ampmRun.Text = local.ToString("tt", TimeFormat.En);
             dateText.Text = local.ToString("ddd, MMM d, yyyy", TimeFormat.En);
 
@@ -186,8 +280,8 @@ namespace WorldClock
             dayIcon.Foreground = day ? Theme.SunBrush : Theme.MoonBrush;
             dayIcon.ToolTip = day ? "Daytime there" : "Night-time there";
 
-            offsetText.Text = IsHome ? "Your local time" : TimeFormat.Describe(tz, home, utcNow);
-            analog.SetTime(local);
+            offsetText.Text = IsHome ? "Your local time" : TimeFormat.Describe(tz, home, utcNow, planned);
+            analog.SetTime(local, !planned);
         }
     }
 }

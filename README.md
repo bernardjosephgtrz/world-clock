@@ -8,6 +8,8 @@ draggable line when you just want the times.
 
 ![One-line view](docs/compact.png)
 
+![Planning a meeting time](docs/planning.png)
+
 ## Run it
 
 ```powershell
@@ -26,6 +28,10 @@ Windows 10/11 using the .NET Framework 4.8 that ships with Windows.
   Arrow keys + Enter, or click.
 - **Digital on top, analog below**, 12-hour with seconds, date, and the difference from
   you, e.g. `6h behind · Today` / `Yesterday` / `Tomorrow`. Sun/moon icon shows day or night there.
+- **Plan a meeting time.** Someone says "3 pm my time"? Click the time on their clock and type
+  `3pm` (or `15:00`, `3:30 pm`), then Enter. Every clock jumps to that moment, so you see it in your
+  own time straight away. Scroll over a time to move it 15 minutes (Shift + scroll: 1 hour), or over
+  the date to move a day. **Back to now** or Esc returns to the live time.
 - **Daylight saving time is automatic**, using the time zone rules built into Windows.
 - **Always on top** or a normal window that other apps can cover: pin button, right-click
   menu, or tray icon.
@@ -62,7 +68,7 @@ always runs the latest version.
 
 ```
 src/            app source (WPF, C# 5 / .NET Framework 4.8)
-tests/          unit tests for time math, DST, search and settings
+tests/          unit tests for time math, DST, planning, search and settings
 dist/           ready-to-run WorldClock.exe
 docs/           README screenshots
 tools/          screenshot generator

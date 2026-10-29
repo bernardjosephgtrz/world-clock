@@ -15,6 +15,7 @@ namespace WorldClock
         readonly RotateTransform hourRot = new RotateTransform(0, C, C);
         readonly RotateTransform minRot = new RotateTransform(0, C, C);
         readonly RotateTransform secRot = new RotateTransform(0, C, C);
+        readonly Line secHand;
 
         public AnalogClock()
         {
@@ -72,7 +73,8 @@ namespace WorldClock
 
             Children.Add(Hand(6, 34, 4.5, Theme.TextBrush, hourRot));
             Children.Add(Hand(8, 52, 3, Theme.TextBrush, minRot));
-            Children.Add(Hand(14, 58, 1.4, Theme.AccentSoftBrush, secRot));
+            secHand = Hand(14, 58, 1.4, Theme.AccentSoftBrush, secRot);
+            Children.Add(secHand);
 
             Children.Add(Dot(9, Theme.AccentSoftBrush));
             Children.Add(Dot(3.5, Theme.Solid(Color.FromRgb(0x0C, 0x16, 0x2D))));
@@ -102,8 +104,9 @@ namespace WorldClock
             return e;
         }
 
-        public void SetTime(DateTime t)
+        public void SetTime(DateTime t, bool showSeconds)
         {
+            secHand.Visibility = showSeconds ? Visibility.Visible : Visibility.Collapsed;
             double s = t.Second;
             double m = t.Minute + s / 60.0;
             double h = (t.Hour % 12) + m / 60.0;

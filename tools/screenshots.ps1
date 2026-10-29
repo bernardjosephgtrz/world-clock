@@ -1,13 +1,15 @@
 # Renders README screenshots straight from the app's UI (offscreen, transparent background),
 # so nothing from your desktop ends up in the images. Does not touch your saved settings.
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\screenshots.ps1
+param([string]$Exe)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $out  = Join-Path $root 'docs'
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
-$asm = [Reflection.Assembly]::LoadFile((Join-Path $root 'dist\WorldClock.exe'))
+if (-not $Exe) { $Exe = Join-Path $root 'dist\WorldClock.exe' }
+$asm = [Reflection.Assembly]::LoadFile($Exe)
 $flags = [Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
 
 $app = [System.Windows.Application]::Current
@@ -15,7 +17,7 @@ if (-not $app) { $app = New-Object System.Windows.Application }
 $styles = $asm.GetType('WorldClock.Theme').GetMethod('LoadStyles', $flags).Invoke($null, @())
 $app.Resources.MergedDictionaries.Add($styles)
 
-function Render($name, [bool]$compact, [double]$scale, $zones) {
+function Render($name, [bool]$compact, [double]$scale, $zones, $plan) {
     $s = New-Object WorldClock.AppSettings
     $s.FirstRun = $false; $s.Compact = $compact; $s.Scale = $scale
     foreach ($z in $zones) {
@@ -26,6 +28,11 @@ function Render($name, [bool]$compact, [double]$scale, $zones) {
     $wt = $asm.GetType('WorldClock.MainWindow')
     $ctor = $wt.GetConstructor([Type[]]@($s.GetType()))
     $w = $ctor.Invoke([object[]]@($s.psobject.BaseObject))
+    if ($plan) {   # @(city, local wall time there): show the planning view
+        $zone = $asm.GetType('WorldClock.Zones').GetMethod('FindCity', $flags).Invoke($null, @($plan[0]))
+        $utc = $asm.GetType('WorldClock.TimeFormat').GetMethod('ZoneToUtc').Invoke($null, @($plan[1], $zone.Tz))
+        $wt.GetMethod('PlanAt', $flags).Invoke($w, @($zone, $utc))
+    }
     $content = $w.Content
     $w.Content = $null                     # detach so it can be rendered on its own
     $content.Measure([System.Windows.Size]::new([double]::PositiveInfinity, [double]::PositiveInfinity))
@@ -45,3 +52,4 @@ function Render($name, [bool]$compact, [double]$scale, $zones) {
 # The window is only constructed (never shown or interacted with), so no settings are saved.
 Render 'full'    $false 1.0 @(@('W. Europe Standard Time','Hamburg','Germany'), @('Eastern Standard Time','New York','United States'))
 Render 'compact' $true  1.0 @(@('W. Europe Standard Time','Hamburg','Germany'), @('Eastern Standard Time','New York','United States'))
+Render 'planning' $false 1.0 @(@('W. Europe Standard Time','Hamburg','Germany'), @('Eastern Standard Time','New York','United States')) @('Hamburg', [DateTime]::new(2026, 10, 29, 15, 0, 0))

@@ -32,6 +32,7 @@ namespace WorldClock
         public static readonly Brush AccentSoftBrush = Solid(AccentSoft);
         public static readonly Brush SunBrush = Solid(Hex("#FBBF24"));
         public static readonly Brush MoonBrush = Solid(Hex("#A5B4FC"));
+        public static readonly Brush ErrorBrush = Solid(Hex("#F87171"));
 
         public static SolidColorBrush Solid(Color c)
         {
@@ -125,6 +126,31 @@ namespace WorldClock
     <Style.Triggers>
       <Trigger Property=""IsMouseOver"" Value=""True"">
         <Setter Property=""Background"" Value=""#1F3358""/>
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <Style x:Key=""PillButton"" TargetType=""Button"">
+    <Setter Property=""Foreground"" Value=""#F1F5FF""/>
+    <Setter Property=""Background"" Value=""#2563EB""/>
+    <Setter Property=""FontFamily"" Value=""Segoe UI""/>
+    <Setter Property=""FontSize"" Value=""11""/>
+    <Setter Property=""FontWeight"" Value=""SemiBold""/>
+    <Setter Property=""Padding"" Value=""10,3""/>
+    <Setter Property=""Cursor"" Value=""Hand""/>
+    <Setter Property=""Focusable"" Value=""False""/>
+    <Setter Property=""Template"">
+      <Setter.Value>
+        <ControlTemplate TargetType=""Button"">
+          <Border Background=""{TemplateBinding Background}"" CornerRadius=""10"" Padding=""{TemplateBinding Padding}"">
+            <ContentPresenter HorizontalAlignment=""Center"" VerticalAlignment=""Center""/>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property=""IsMouseOver"" Value=""True"">
+        <Setter Property=""Background"" Value=""#3B82F6""/>
       </Trigger>
     </Style.Triggers>
   </Style>

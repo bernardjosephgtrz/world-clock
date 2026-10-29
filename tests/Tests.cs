@@ -54,6 +54,53 @@ namespace WorldClock.Tests
             Eq("\u22122h30", TimeFormat.Short(Zones.FindCity("Mumbai").Tz, home, beforeDst), "short india");
             Eq("", TimeFormat.Short(Zones.FindCity("Singapore").Tz, home, beforeDst), "short same");
 
+            // Planning: typed times.
+            foreach (var c in new[] {
+                new object[] { "3pm", 15, 0 }, new object[] { "3 PM", 15, 0 }, new object[] { "3:30pm", 15, 30 },
+                new object[] { "3.30 pm", 15, 30 }, new object[] { "15:00", 15, 0 }, new object[] { "15.00", 15, 0 },
+                new object[] { "1500", 15, 0 }, new object[] { "930", 9, 30 }, new object[] { "9a", 9, 0 },
+                new object[] { "12am", 0, 0 }, new object[] { "12:15 pm", 12, 15 }, new object[] { "noon", 12, 0 },
+                new object[] { "midnight", 0, 0 }, new object[] { " 10:00 PM ", 22, 0 }, new object[] { "0:05", 0, 5 } })
+            {
+                int h, m;
+                bool ok = TimeFormat.TryParseClock((string)c[0], out h, out m);
+                Eq(true, ok, "parse ok '" + c[0] + "'");
+                Eq((int)c[1] * 60 + (int)c[2], h * 60 + m, "parse '" + c[0] + "'");
+            }
+            foreach (var bad in new[] { "", "abc", "25:00", "13pm", "0am", "3:75", "12345", "3:", ":30", "1:2:3" })
+            {
+                int h, m;
+                Eq(false, TimeFormat.TryParseClock(bad, out h, out m), "parse rejects '" + bad + "'");
+            }
+
+            // The use case: 3 PM in Hamburg on Thu 29 Oct 2026 (CET, after the DST switch) = 10 PM in Cebu.
+            var meeting = TimeFormat.ZoneToUtc(new DateTime(2026, 10, 29, 15, 0, 0), hamburg.Tz);
+            Eq(new DateTime(2026, 10, 29, 14, 0, 0), meeting, "hamburg 3pm -> utc (CET)");
+            Eq(new DateTime(2026, 10, 29, 22, 0, 0), TimeZoneInfo.ConvertTimeFromUtc(meeting, home), "hamburg 3pm -> cebu 10pm");
+            Eq("7h behind · Same day", TimeFormat.Describe(hamburg.Tz, home, meeting, true), "planned describe");
+            // A week earlier, still CEST: 3 PM Hamburg = 9 PM Cebu.
+            var meetingCest = TimeFormat.ZoneToUtc(new DateTime(2026, 10, 21, 15, 0, 0), hamburg.Tz);
+            Eq(new DateTime(2026, 10, 21, 21, 0, 0), TimeZoneInfo.ConvertTimeFromUtc(meetingCest, home), "hamburg 3pm -> cebu 9pm (CEST)");
+            // Planned day words.
+            var late = TimeFormat.ZoneToUtc(new DateTime(2026, 10, 29, 20, 0, 0), hamburg.Tz);   // 03:00 next day in Cebu
+            Eq("7h behind · Previous day", TimeFormat.Describe(hamburg.Tz, home, late, true), "planned previous day");
+            Eq("1h ahead · Next day", TimeFormat.Describe(tokyo.Tz, home, earlyUtc, true), "planned next day");
+            // 02:30 does not exist in Hamburg on 29 Mar 2026 (02:00 -> 03:00): becomes 03:30 CEST = 01:30 UTC.
+            Eq(new DateTime(2026, 3, 29, 1, 30, 0), TimeFormat.ZoneToUtc(new DateTime(2026, 3, 29, 2, 30, 0), hamburg.Tz), "dst gap");
+
+            // Scroll steps snap to the zone's wall clock.
+            var at1007 = new DateTime(2026, 10, 29, 2, 7, 23, DateTimeKind.Utc);   // 10:07:23 in Cebu
+            Func<DateTime, string> cebu = u => TimeZoneInfo.ConvertTimeFromUtc(u, home).ToString("MM-dd HH:mm:ss");
+            Eq("10-29 10:15:00", cebu(TimeFormat.Step(at1007, home, 15, 1)), "step +15 snaps up");
+            Eq("10-29 10:00:00", cebu(TimeFormat.Step(at1007, home, 15, -1)), "step -15 snaps down");
+            Eq("10-29 10:30:00", cebu(TimeFormat.Step(TimeFormat.Step(at1007, home, 15, 1), home, 15, 1)), "step +15 twice");
+            Eq("10-29 11:00:00", cebu(TimeFormat.Step(at1007, home, 60, 1)), "step +1h");
+            Eq("10-28 23:45:00", cebu(TimeFormat.Step(new DateTime(2026, 10, 28, 16, 0, 0, DateTimeKind.Utc), home, 15, -1)), "step back over midnight");
+            Eq("10-30 10:07:00", cebu(TimeFormat.StepDay(at1007, home, 1)), "next day");
+            // Day step keeps the wall-clock time across Hamburg's DST switch (Sat 24 -> Sun 25 Oct).
+            var sat3pm = TimeFormat.ZoneToUtc(new DateTime(2026, 10, 24, 15, 0, 0), hamburg.Tz);
+            Eq(new DateTime(2026, 10, 25, 15, 0, 0), TimeZoneInfo.ConvertTimeFromUtc(TimeFormat.StepDay(sat3pm, hamburg.Tz, 1), hamburg.Tz), "day step over dst");
+
             // Scale is clamped to a sane range.
             Eq(0.6, AppSettings.ClampScale(0.1), "clamp low");
             Eq(2.0, AppSettings.ClampScale(9), "clamp high");

@@ -30,8 +30,12 @@ namespace WorldClock
         readonly CompactStrip compact = new CompactStrip();
         readonly ScaleTransform scaleTx = new ScaleTransform(1, 1);
         readonly System.Windows.Controls.Primitives.Thumb grip;
+        readonly Border planBar;
+        readonly Run planWhen;
 
         ClockCard pickingFor;   // null = adding a new clock
+        DateTime? plannedUtc;   // null = live; otherwise every clock shows this instant
+        ZoneEntry plannedZone;  // clock the time was set on (named in the banner)
 
         public event Action OptionsChanged;   // topmost/lock/clock count changed (tray menu listens)
 
@@ -118,12 +122,47 @@ namespace WorldClock
             left.Children.Add(lockBadge);
             titleBar.Children.Add(left);
 
+            // ---- planning banner (shown while the clocks show a chosen time) ------
+            var nowButton = new Button
+            {
+                Content = "Back to now",
+                ToolTip = "Return to the live time (Esc)",
+                Style = (Style)Application.Current.FindResource("PillButton")
+            };
+            nowButton.Click += delegate { BackToNow(); };
+            var planText = new TextBlock
+            {
+                FontSize = 12,
+                Foreground = Theme.TextBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+            planText.Inlines.Add(new Run("  ") { FontFamily = Theme.IconFont, Foreground = Theme.AccentSoftBrush });
+            planText.Inlines.Add(new Run("Planning  ") { FontWeight = FontWeights.SemiBold, Foreground = Theme.AccentSoftBrush });
+            planWhen = new Run();
+            planText.Inlines.Add(planWhen);
+            var planRow = new DockPanel();
+            DockPanel.SetDock(nowButton, Dock.Right);
+            planRow.Children.Add(nowButton);
+            planRow.Children.Add(planText);
+            planBar = new Border
+            {
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(10, 5, 5, 5),
+                Margin = new Thickness(0, 0, 0, 10),
+                Background = Theme.Solid(Theme.Pill),
+                Visibility = Visibility.Collapsed,
+                Child = planRow
+            };
+
             // ---- clocks ---------------------------------------------------------
             cardPanel = new StackPanel { Orientation = Orientation.Horizontal };
 
             var content = new DockPanel();
             DockPanel.SetDock(titleBar, Dock.Top);
+            DockPanel.SetDock(planBar, Dock.Top);
             content.Children.Add(titleBar);
+            content.Children.Add(planBar);
             content.Children.Add(cardPanel);
 
             fullView = content;
@@ -158,6 +197,7 @@ namespace WorldClock
 
             root.MouseLeftButtonDown += OnDragArea;
             picker.Picked += OnZonePicked;
+            KeyDown += (s, e) => { if (e.Key == Key.Escape && plannedUtc.HasValue) { BackToNow(); e.Handled = true; } };
 
             // ---- initial clocks -------------------------------------------------
             AddCard(home, true);
@@ -208,9 +248,27 @@ namespace WorldClock
             if (cards.Count > 0) card.Margin = new Thickness(10, 0, 0, 0);
             card.PickRequested += c => { pickingFor = c; picker.Show(c.PickAnchor); };
             card.RemoveRequested += RemoveCard;
+            card.PlanRequested += (c, utc) => PlanAt(c.Zone, utc);
             cards.Add(card);
             cardPanel.Children.Add(card);
-            card.UpdateTime(DateTime.UtcNow, home.Tz);
+            card.UpdateTime(plannedUtc ?? DateTime.UtcNow, home.Tz, plannedUtc.HasValue);
+        }
+
+        /// <summary>Freeze every clock at one instant, e.g. "3 PM in Hamburg", to see it in the other zones.</summary>
+        void PlanAt(ZoneEntry zone, DateTime utc)
+        {
+            plannedUtc = utc;
+            plannedZone = zone;
+            planBar.Visibility = Visibility.Visible;
+            Tick();
+        }
+
+        public void BackToNow()
+        {
+            if (!plannedUtc.HasValue) return;
+            plannedUtc = null;
+            planBar.Visibility = Visibility.Collapsed;
+            Tick();
         }
 
         void RemoveCard(ClockCard card)
@@ -257,7 +315,10 @@ namespace WorldClock
         {
             var now = DateTime.UtcNow;
             if (settings.Compact) compact.Update(now, home.Tz);
-            else foreach (var c in cards) c.UpdateTime(now, home.Tz);
+            else foreach (var c in cards) c.UpdateTime(plannedUtc ?? now, home.Tz, plannedUtc.HasValue);
+            if (plannedUtc.HasValue)
+                planWhen.Text = TimeZoneInfo.ConvertTimeFromUtc(plannedUtc.Value, plannedZone.Tz)
+                    .ToString("ddd, MMM d · h:mm tt", TimeFormat.En) + " in " + plannedZone.City;
             // Re-align to just after the next whole second so seconds never skip or stutter.
             timer.Interval = TimeSpan.FromMilliseconds(1000 - now.Millisecond + 15);
         }
