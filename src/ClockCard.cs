@@ -137,7 +137,9 @@ namespace WorldClock
             time.Inlines.Add(timeRun);
             time.Inlines.Add(new Run(" ") { FontSize = 13 });
             time.Inlines.Add(ampmRun);
-            time.MouseLeftButtonDown += (s, e) => { if (TimeClicked != null) TimeClicked(this); e.Handled = true; };
+            // Open on release, like a button: a popup opened on press would close again on the release.
+            time.MouseLeftButtonDown += (s, e) => { e.Handled = true; };   // no window drag from the time
+            time.MouseLeftButtonUp += (s, e) => { if (TimeClicked != null) TimeClicked(this); e.Handled = true; };
             stack.Children.Add(time);
 
             // Date, with previous/next-day arrows while a time is planned.
